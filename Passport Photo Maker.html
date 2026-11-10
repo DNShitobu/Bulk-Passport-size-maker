@@ -1,0 +1,1818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passport Photo Maker</title>
+<style>
+  :root {
+    --ink: #1c2530; --muted: #5d6b7a; --line: #d9dfe6; --paper: #f4f6f8;
+    --card: #ffffff; --accent: #14507a; --accent-ink: #ffffff; --warn: #a23b1e;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); }
+  main { flex: 1; min-height: 0; display: flex; }
+  aside {
+    width: 330px; flex: none; overflow-y: auto; background: var(--card);
+    border-right: 1px solid var(--line); padding: 0 18px 18px;
+  }
+  details.sec { border-bottom: 1px solid var(--line); padding: 10px 0; }
+  details.sec[inert] { opacity: .55; }
+  details.sec > summary { cursor: pointer; font-weight: 650; font-size: 13px; padding: 2px 0; }
+  details.sec[open] > summary { margin-bottom: 6px; }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 3px; }
+  label.check { display: flex; gap: 7px; align-items: flex-start; color: var(--ink); font-size: 13px; margin: 8px 0 0; }
+  label.check input { margin-top: 3px; }
+  input[type=number], input[type=text], select, textarea {
+    width: 100%; padding: 6px 8px; font: inherit; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; background: #fff;
+  }
+  textarea { height: 70px; resize: vertical; font-size: 12px; }
+  input[type=range] { width: 100%; margin: 0; }
+  input[type=color] { width: 44px; height: 30px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .warn { color: var(--warn); }
+  .readout { margin: 10px 0 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+  button {
+    font: inherit; cursor: pointer; padding: 7px 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .stack { display: grid; gap: 8px; }
+  progress { width: 100%; height: 8px; margin-top: 10px; }
+  #status { margin: 8px 0 0; font-size: 13px; }
+
+  #stage { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 18px 18px; position: relative; }
+  #tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  #tools button { padding: 4px 10px; font-size: 13px; }
+  #anText { color: var(--muted); font-size: 12px; }
+  #empty {
+    height: 100%; min-height: 260px; border: 2px dashed var(--line); border-radius: 12px;
+    display: grid; place-content: center; text-align: center; color: var(--muted); gap: 6px; padding: 20px;
+  }
+  #empty strong { color: var(--ink); font-size: 16px; }
+  body.dragging #stage::after {
+    content: "Drop the folder here"; position: absolute; inset: 10px; border-radius: 12px;
+    background: rgba(20, 80, 122, .9); color: #fff; font-size: 20px; display: grid; place-content: center;
+  }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
+  #grid.onlyFlag .tile:not(.flag) { display: none; }
+  .tile { border: 0; background: none; padding: 0; text-align: left; position: relative; }
+  .frame {
+    display: block; position: relative; overflow: hidden; width: 100%;
+    aspect-ratio: var(--ar, 0.75); background: var(--bg, #fff);
+    border: 1px solid var(--line); border-radius: 4px;
+  }
+  .frame img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
+  .tile:hover .frame { border-color: var(--accent); }
+  .tile.loading .frame { background: #e6eaee; }
+  .tile.error .frame { background: #f6e4de; }
+  .tile.flag .frame { border: 2px solid var(--warn); }
+  .tile.edited::after {
+    content: ""; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px #fff;
+  }
+  .cap, .flagtxt { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cap { margin-top: 4px; color: var(--muted); }
+  .flagtxt, .tile.error .cap { color: var(--warn); }
+
+  dialog { border: 0; border-radius: 12px; padding: 18px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); box-shadow: 0 20px 60px rgba(0,0,0,.35); color: var(--ink); }
+  dialog::backdrop { background: rgba(20, 28, 38, .6); }
+  dialog h2 { margin: 0 0 2px; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+  .ed { display: flex; gap: 20px; flex-wrap: wrap; }
+  .edLeft { max-width: 400px; }
+  .edRight { width: 270px; }
+  #edFrame { margin: 10px 0; cursor: grab; touch-action: none; border-radius: 0; }
+  #edFrame.brush { cursor: crosshair; }
+  #edOverlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .bar .spacer { flex: 1; }
+  .seg { display: flex; }
+  .seg button { flex: 1; border-radius: 0; padding: 6px 4px; font-size: 12px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+
+  /* print pages */
+  #printView { position: fixed; inset: 0; z-index: 50; background: #6b7682; overflow: auto; }
+  #printBar { position: sticky; top: 0; background: var(--card); padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  #printBar p { margin: 0; flex: 1; min-width: 200px; color: var(--muted); font-size: 12px; }
+  #pages { width: 210mm; max-width: 100%; margin: 16px auto; background: #fff; padding: 10mm; color: #000; }
+  #pages, #pages * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .stu { break-inside: avoid; margin-bottom: 4mm; }
+  .stuName { font-size: 8pt; margin-bottom: 1mm; }
+  .stu img { display: inline-block; margin: 0 2mm 2mm 0; outline: .2mm dashed #888; vertical-align: top; }
+  .cls { break-after: page; }
+  .cls:last-child { break-after: auto; }
+  .cls h2 { font-size: 13pt; margin: 0 0 4mm; max-width: none; white-space: normal; }
+  .cgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4mm 3mm; }
+  .cgrid figure { margin: 0; break-inside: avoid; text-align: center; }
+  .cgrid img { width: 100%; display: block; border: .2mm solid #999; }
+  .cgrid figcaption { font-size: 7.5pt; line-height: 1.2; margin-top: 1mm; overflow-wrap: anywhere; }
+  .cgrid small { display: block; color: #555; font-size: 6.5pt; }
+  .idcard {
+    width: 85.6mm; height: 54mm; display: inline-grid; grid-template-rows: 11mm 1fr 6mm; vertical-align: top;
+    margin: 0 3mm 3mm 0; border: .2mm solid #888; border-radius: 3mm; overflow: hidden; break-inside: avoid; background: #fff;
+  }
+  .idhead { display: flex; align-items: center; gap: 2mm; padding: 0 3mm; color: #fff; font-weight: 700; font-size: 9.5pt; line-height: 1.1; }
+  .idhead img { height: 8.5mm; width: auto; }
+  .idbody { display: flex; gap: 3mm; padding: 2.5mm 3mm; align-items: center; min-height: 0; }
+  .idbody img { height: 31mm; width: auto; border: .2mm solid #999; }
+  .idtext { font-size: 8pt; min-width: 0; overflow-wrap: anywhere; }
+  .idtext b { display: block; font-size: 10.5pt; line-height: 1.15; margin-bottom: 1.5mm; }
+  .idtext span { display: block; }
+  .idfoot { color: #fff; font-size: 7pt; display: flex; align-items: center; justify-content: center; }
+
+  @page { size: A4; margin: 10mm; }
+  @media print {
+    html, body { height: auto; background: #fff; display: block; }
+    header, main, dialog, #printBar { display: none !important; }
+    #printView { position: static; background: #fff; overflow: visible; }
+    #pages { width: auto; margin: 0; padding: 0; }
+  }
+  @media (max-width: 760px) {
+    main { flex-direction: column; overflow-y: auto; }
+    aside { width: auto; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+    #stage { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Passport Photo Maker</h1>
+  <p>Resize a whole folder of photos at once. Nothing is uploaded; the photos stay on this computer.</p>
+</header>
+
+<main>
+  <aside>
+    <details class="sec" open>
+      <summary>1. Photos</summary>
+      <div class="stack">
+        <button class="primary" id="pickFolder" type="button">Choose a folder…</button>
+        <button id="pickFiles" type="button">Choose individual photos…</button>
+      </div>
+      <input id="folderInput" type="file" webkitdirectory multiple hidden>
+      <input id="filesInput" type="file" accept="image/*,.heic,.heif" multiple hidden>
+      <p class="note" id="count"></p>
+      <p class="note" id="clearWrap" hidden><button class="link" id="clear" type="button">Remove all photos</button></p>
+    </details>
+
+    <details class="sec" open>
+      <summary>2. Size</summary>
+      <label for="preset">Standard sizes</label>
+      <select id="preset"></select>
+      <div class="row">
+        <div><label for="w">Width</label><input id="w" type="number" min="1" step="any"></div>
+        <div><label for="h">Height</label><input id="h" type="number" min="1" step="any"></div>
+        <div><label for="unit">Unit</label>
+          <select id="unit"><option value="px">px</option><option value="mm">mm</option><option value="cm">cm</option><option value="in">inch</option></select>
+        </div>
+      </div>
+      <label for="dpi">Print resolution (DPI), used for mm and inch sizes</label>
+      <input id="dpi" type="number" min="50" max="1200" step="1">
+      <p class="readout" id="readout"></p>
+      <label>Also save these sizes in the same run</label>
+      <div id="extras"></div>
+    </details>
+
+    <details class="sec" open>
+      <summary>3. Framing</summary>
+      <label for="mode">When a photo has a different shape</label>
+      <select id="mode">
+        <option value="crop">Crop to fill the frame</option>
+        <option value="fit">Keep the whole photo, pad the edges</option>
+        <option value="stretch">Stretch to fit (distorts faces)</option>
+      </select>
+      <div id="faceWrap">
+        <label class="check"><input id="face" type="checkbox"> Find each face and centre it</label>
+        <div id="headWrap">
+          <label for="head">Head size: <span id="headVal"></span> of the photo height</label>
+          <input id="head" type="range" min="35" max="85" step="1">
+          <label class="check"><input id="straighten" type="checkbox"> Straighten tilted heads</label>
+        </div>
+      </div>
+      <div id="anchorWrap">
+        <label for="anchor">Where no face is found, keep the</label>
+        <select id="anchor"><option value="0">Top</option><option value="0.5">Middle</option><option value="1">Bottom</option></select>
+      </div>
+      <div id="bgWrap">
+        <label for="bg">Padding colour</label>
+        <input id="bg" type="color">
+      </div>
+      <label class="check"><input id="flags" type="checkbox"> Mark photos that need checking (no face, two faces, head cut off, blurry, dark)</label>
+      <p class="note">Click any photo on the right to adjust it on its own.</p>
+    </details>
+
+    <details class="sec" open>
+      <summary>4. Background</summary>
+      <label for="bgmode">Replace the background behind the student</label>
+      <select id="bgmode">
+        <option value="keep">No, keep the original background</option>
+        <option value="#ffffff">White</option>
+        <option value="#d81e1e">Red</option>
+        <option value="#cfe3f7">Light blue</option>
+        <option value="custom">Another colour</option>
+      </select>
+      <div id="bgcustomWrap">
+        <label for="bgcustom">Background colour</label>
+        <input id="bgcustom" type="color">
+      </div>
+      <p class="note">If the cut-out is wrong on a photo, click it and use the Restore and Erase brushes.</p>
+    </details>
+
+    <details class="sec">
+      <summary>5. Lighting</summary>
+      <label for="bri">Brightness: <span id="briVal"></span></label>
+      <input id="bri" type="range" min="-50" max="50" step="1">
+      <label for="con">Contrast: <span id="conVal"></span></label>
+      <input id="con" type="range" min="-50" max="50" step="1">
+      <p class="note">Applies to every photo. A single photo can be set differently by clicking it. <button class="link" id="lightReset" type="button">Reset</button></p>
+    </details>
+
+    <details class="sec">
+      <summary>6. Names from a class list</summary>
+      <p class="note" style="margin-top:0">Use a list with these columns: photo file name, ID number, student name, class. A header row is optional. With a single column, the names are given to the photos in order.</p>
+      <div class="stack" style="margin-top:8px">
+        <button id="pickList" type="button">Choose an Excel or CSV file…</button>
+      </div>
+      <input id="listFile" type="file" accept=".xlsx,.csv,.txt,.tsv" hidden>
+      <label for="listPaste">or paste the rows from Excel</label>
+      <textarea id="listPaste" placeholder="IMG_0012	0123456789	Ama Mensah	2A"></textarea>
+      <div class="bar" style="margin-top:6px">
+        <button id="listApply" type="button">Use pasted rows</button>
+        <button class="link" id="listClear" type="button" hidden>Remove the list</button>
+      </div>
+      <p class="note" id="listInfo"></p>
+      <label for="nameMode">Name the saved files by</label>
+      <select id="nameMode">
+        <option value="id">ID number</option>
+        <option value="name">Student name</option>
+        <option value="orig">Original file name</option>
+      </select>
+    </details>
+
+    <details class="sec">
+      <summary>7. File type</summary>
+      <div class="row">
+        <div><label for="fmt">Format</label>
+          <select id="fmt"><option value="jpg">JPG</option><option value="png">PNG</option></select>
+        </div>
+        <div id="maxWrap"><label for="maxkb">Max size (KB)</label><input id="maxkb" type="number" min="1" step="1" placeholder="no limit"></div>
+      </div>
+      <div id="qWrap">
+        <label for="q">JPG quality: <span id="qVal"></span></label>
+        <input id="q" type="range" min="40" max="100" step="1">
+      </div>
+    </details>
+
+    <details class="sec" open>
+      <summary>8. Save</summary>
+      <div class="stack">
+        <button class="primary" id="saveFolder" type="button" disabled>Save into a folder…</button>
+        <button id="saveZip" type="button" disabled>Download as a ZIP file</button>
+      </div>
+      <p class="note">Each size goes into its own new folder. Your originals are never changed.</p>
+    </details>
+
+    <details class="sec">
+      <summary>9. Print</summary>
+      <label for="printKind">What to print</label>
+      <select id="printKind">
+        <option value="sheet">Photo sheets to cut out</option>
+        <option value="class">Class sheet with names</option>
+        <option value="cards">ID cards</option>
+      </select>
+      <div id="optSheet">
+        <div class="row">
+          <div><label for="copies">Copies per student</label><input id="copies" type="number" min="1" max="60" step="1"></div>
+          <div><label for="pw">Photo width (mm)</label><input id="pw" type="number" min="15" max="100" step="1"></div>
+        </div>
+        <label class="check"><input id="showNames" type="checkbox"> Print each student's name above their photos</label>
+      </div>
+      <div id="optSchool">
+        <label for="school">School name</label>
+        <input id="school" type="text">
+      </div>
+      <div id="optCards">
+        <label for="footer">Line at the bottom of the card</label>
+        <input id="footer" type="text" placeholder="2026/2027 academic year">
+        <div class="row">
+          <div><label for="cardColor">Card colour</label><input id="cardColor" type="color"></div>
+          <div><label>School crest</label><button id="pickCrest" type="button">Choose image…</button></div>
+        </div>
+        <input id="crest" type="file" accept="image/*" hidden>
+      </div>
+      <div class="stack" style="margin-top:10px">
+        <button id="makePrint" type="button" disabled>Make the pages</button>
+      </div>
+      <p class="note">The pages open for you to check. To get a PDF, press Print and choose "Save as PDF" as the printer.</p>
+    </details>
+
+    <progress id="prog" value="0" max="1" hidden></progress>
+    <p id="status" role="status"></p>
+  </aside>
+
+  <section id="stage">
+    <div id="tools" hidden>
+      <button id="fAll" type="button" class="on"></button>
+      <button id="fFlag" type="button"></button>
+      <span id="anText"></span>
+    </div>
+    <div id="empty">
+      <strong>Choose the folder with the students' photos</strong>
+      <span>or drag the folder onto this page. Subfolders are included.</span>
+    </div>
+    <div id="grid" hidden></div>
+  </section>
+</main>
+
+<dialog id="editor">
+  <div class="ed">
+    <div class="edLeft">
+      <h2 id="edName"></h2>
+      <div class="note" id="edHint"></div>
+      <div class="frame" id="edFrame"><img id="edImg" alt="" draggable="false"><canvas id="edOverlay"></canvas></div>
+      <p class="note warn" id="edFlag" hidden></p>
+    </div>
+    <div class="edRight">
+      <div id="edToolWrap">
+        <div class="seg" id="edTools">
+          <button type="button" data-tool="move" class="on">Move</button>
+          <button type="button" data-tool="keep">Restore brush</button>
+          <button type="button" data-tool="erase">Erase brush</button>
+        </div>
+        <div id="edBrushWrap" hidden>
+          <label for="edBrush">Brush size</label>
+          <input id="edBrush" type="range" min="6" max="80" step="1" value="26">
+          <p class="note"><button class="link" id="edUndo" type="button">Undo the last stroke</button></p>
+        </div>
+      </div>
+      <label for="edZoom">Zoom</label>
+      <input id="edZoom" type="range" min="1" max="6" step="0.01">
+      <label for="edAng">Straighten: <span id="edAngVal"></span></label>
+      <input id="edAng" type="range" min="-20" max="20" step="0.5">
+      <label for="edBri">Brightness</label>
+      <input id="edBri" type="range" min="-50" max="50" step="1">
+      <label for="edCon">Contrast</label>
+      <input id="edCon" type="range" min="-50" max="50" step="1">
+      <div class="bar">
+        <button id="edRotL" type="button">⟲ Turn</button>
+        <button id="edRotR" type="button">Turn ⟳</button>
+        <button id="edReset" type="button">Reset</button>
+      </div>
+      <div class="bar">
+        <button id="edOk" type="button" hidden>Mark as OK</button>
+        <button id="edRemove" type="button">Remove photo</button>
+      </div>
+      <div class="bar">
+        <button id="edPrev" type="button">← Previous</button>
+        <button id="edNext" type="button">Next →</button>
+        <span class="spacer"></span>
+        <button class="primary" id="edDone" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<div id="printView" hidden>
+  <div id="printBar">
+    <p id="printHint"></p>
+    <button class="primary" id="doPrint" type="button">Print or save as PDF</button>
+    <button id="closePrint" type="button">Close</button>
+  </div>
+  <div id="pages"></div>
+</div>
+
+<script>
+'use strict';
+
+const PRESETS = [
+  { id: 'school', label: '150 × 200 px (school / online upload)', short: '150 × 200 px', w: 150, h: 200, unit: 'px' },
+  { id: '35x45',  label: '35 × 45 mm (Ghana, UK, EU, most countries)', short: '35 × 45 mm', w: 35, h: 45, unit: 'mm' },
+  { id: '2x2',    label: '2 × 2 inch (USA)', short: '2 × 2 inch', w: 2, h: 2, unit: 'in' },
+  { id: '50x70',  label: '50 × 70 mm (Canada)', short: '50 × 70 mm', w: 50, h: 70, unit: 'mm' },
+  { id: '33x48',  label: '33 × 48 mm (China)', short: '33 × 48 mm', w: 33, h: 48, unit: 'mm' },
+  { id: '1x1',    label: '1 × 1 inch (small ID photo)', short: '1 × 1 inch', w: 1, h: 1, unit: 'in' },
+  { id: 'custom', label: 'Custom size', w: null, h: null, unit: null },
+];
+const VALS = { preset: 'school', w: 150, h: 200, unit: 'px', dpi: 300, mode: 'crop', anchor: '0.5', bg: '#ffffff', head: 62,
+  bgmode: 'keep', bgcustom: '#1e63c8', bri: 0, con: 0, nameMode: 'id', fmt: 'jpg', q: 90, maxkb: '',
+  printKind: 'sheet', copies: 6, pw: 35, school: '', cardColor: '#14507a', footer: '' };
+const CHECKS = { face: true, straighten: true, flags: true, showNames: true };
+const CDN = {
+  mp: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14',
+  seg: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+  face: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite',
+  heic: 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
+};
+const EXT_RE = /\.(jpe?g|jfif|png|webp|bmp|gif|avif|heic|heif)$/i;
+const HEIC_RE = /\.(heic|heif)$/i;
+const THUMB = 480, MAX_SIDE = 6000, RAD = Math.PI / 180;
+const HEAD_K = 1.4, HEAD_UP = 0.4;   // the detector's face box runs from the brow to the chin; the whole head is about 1.4 boxes tall
+const BLUR_T = 60;                    // sharpness score below which a face is marked "may be blurry"
+const MODEL_FAIL = "Couldn't load the face and background tools. They need an internet connection the first time, unless the file passport-offline.js is in the same folder as this page.";
+
+const el = {};
+document.querySelectorAll('[id]').forEach(n => { el[n.id] = n; });
+
+const items = [];
+const queue = [];
+let active = 0, ignored = 0;
+let out = { w: 150, h: 200 };
+let busy = false, current = null, onlyFlag = false;
+let listRows = null, listCols = null;
+let crestUrl = '';
+
+// A pause that lets the page redraw. setTimeout is slowed to once a second in background tabs; a message channel is not.
+const tick = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = r; ch.port2.postMessage(0); });
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/* ---------- settings ---------- */
+
+for (const p of PRESETS) el.preset.add(new Option(p.label, p.id));
+for (const p of PRESETS) if (p.w) {
+  const l = document.createElement('label');
+  l.className = 'check';
+  l.innerHTML = '<input type="checkbox">';
+  l.firstChild.value = p.id;
+  l.append(' ' + p.short);
+  el.extras.appendChild(l);
+}
+
+function loadSettings() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem('passportMaker2') || '{}'); } catch (e) {}
+  for (const k in VALS) el[k].value = s[k] != null ? s[k] : VALS[k];
+  for (const k in CHECKS) el[k].checked = s[k] != null ? !!s[k] : CHECKS[k];
+  for (const cb of el.extras.querySelectorAll('input')) cb.checked = (s.extras || []).includes(cb.value);
+  if (!el.preset.value) el.preset.value = 'custom';
+}
+function saveSettings() {
+  const s = {};
+  for (const k in VALS) s[k] = el[k].value;
+  for (const k in CHECKS) s[k] = el[k].checked;
+  s.extras = [...el.extras.querySelectorAll('input:checked')].map(c => c.value);
+  try { localStorage.setItem('passportMaker2', JSON.stringify(s)); } catch (e) {}
+}
+function getDpi() {
+  const d = Math.round(+el.dpi.value);
+  return d >= 50 && d <= 1200 ? d : 300;
+}
+function toPx(w, h, unit) {
+  const d = getDpi();
+  const f = unit === 'px' ? 1 : unit === 'mm' ? d / 25.4 : unit === 'cm' ? d / 2.54 : d;
+  return { w: Math.round(w * f), h: Math.round(h * f), dpi: unit === 'px' ? 0 : d };
+}
+function computeOut() {
+  const w = +el.w.value, h = +el.h.value;
+  if (!(w > 0) || !(h > 0)) return null;
+  const o = toPx(w, h, el.unit.value);
+  if (o.w < 1 || o.h < 1 || o.w > MAX_SIDE || o.h > MAX_SIDE) return null;
+  return o;
+}
+// Every size to save: the main one, then any ticked extras that differ from it.
+function sizeList() {
+  const o = computeOut();
+  if (!o) return null;
+  const list = [o];
+  for (const cb of el.extras.querySelectorAll('input:checked')) {
+    const p = PRESETS.find(x => x.id === cb.value);
+    const s = toPx(p.w, p.h, p.unit);
+    if (!list.some(x => x.w === s.w && x.h === s.h)) list.push(s);
+  }
+  return list;
+}
+// The replacement background colour, or null when the original background is kept.
+function bgColor() {
+  const m = el.bgmode.value;
+  return m === 'keep' ? null : m === 'custom' ? el.bgcustom.value : m;
+}
+const useFace = () => el.face.checked && el.mode.value === 'crop';
+const wantFaces = () => useFace() || el.flags.checked;
+
+function refresh() {
+  const o = computeOut();
+  const mode = el.mode.value, bgc = bgColor();
+  el.faceWrap.hidden = el.anchorWrap.hidden = mode !== 'crop';
+  el.headWrap.hidden = !el.face.checked;
+  el.bgWrap.hidden = mode !== 'fit' || !!bgc;
+  el.bgcustomWrap.hidden = el.bgmode.value !== 'custom';
+  el.qWrap.hidden = el.maxWrap.hidden = el.fmt.value !== 'jpg';
+  el.optSheet.hidden = el.printKind.value !== 'sheet';
+  el.optSchool.hidden = el.printKind.value === 'sheet';
+  el.optCards.hidden = el.printKind.value !== 'cards';
+  el.qVal.textContent = el.q.value + '%';
+  el.headVal.textContent = el.head.value + '%';
+  el.briVal.textContent = (el.bri.value > 0 ? '+' : '') + el.bri.value;
+  el.conVal.textContent = (el.con.value > 0 ? '+' : '') + el.con.value;
+  if (o) {
+    out = o;
+    el.readout.textContent = 'Each photo will be ' + o.w + ' × ' + o.h + ' pixels' + (o.dpi ? ' at ' + o.dpi + ' DPI' : '');
+    el.readout.classList.remove('warn');
+  } else {
+    el.readout.textContent = 'Enter a width and height (up to ' + MAX_SIDE + ' pixels each).';
+    el.readout.classList.add('warn');
+  }
+  document.documentElement.style.setProperty('--ar', out.w / out.h);
+  document.documentElement.style.setProperty('--bg', bgc || (mode === 'fit' ? el.bg.value : '#ffffff'));
+  for (const it of items) paint(it);
+  if (current) openEditor(current);
+  updateButtons();
+  updateTools();
+  saveSettings();
+  analyse();
+}
+function updateButtons() {
+  const ok = items.some(i => i.status === 'ready') && !!computeOut() && !busy;
+  el.saveFolder.disabled = el.saveZip.disabled = el.makePrint.disabled = !ok;
+}
+
+el.preset.addEventListener('change', () => {
+  const p = PRESETS.find(x => x.id === el.preset.value);
+  if (p && p.w) { el.w.value = p.w; el.h.value = p.h; el.unit.value = p.unit; }
+  refresh();
+});
+for (const k of ['w', 'h', 'unit']) el[k].addEventListener('input', () => {
+  const match = PRESETS.find(p => p.w === +el.w.value && p.h === +el.h.value && p.unit === el.unit.value);
+  el.preset.value = match ? match.id : 'custom';
+  refresh();
+});
+for (const k of Object.keys(VALS).concat(Object.keys(CHECKS))) {
+  if (!['preset', 'w', 'h', 'unit'].includes(k)) el[k].addEventListener('input', refresh);
+}
+el.extras.addEventListener('change', refresh);
+el.lightReset.addEventListener('click', () => { el.bri.value = 0; el.con.value = 0; refresh(); });
+
+/* ---------- framing geometry, shared by the previews and the saved photos ---------- */
+
+function baseScale(sw, sh, ow, oh, ang, mode) {
+  if (mode === 'fit') return Math.min(ow / sw, oh / sh);
+  const c = Math.abs(Math.cos(ang)), s = Math.abs(Math.sin(ang));
+  return Math.max((ow * c + oh * s) / sw, (ow * s + oh * c) / sh);
+}
+// How a photo sits in an ow × oh frame: scale s, the source point (cx, cy) placed at the frame centre, and a rotation.
+function xform(it, ow, oh) {
+  const sw = it.w, sh = it.h, mode = el.mode.value, a = it.adj;
+  let ang = 0, s, cx, cy;
+  if (a) {
+    ang = a.ang * RAD;
+    s = baseScale(sw, sh, ow, oh, ang, mode) * a.zoom;
+    cx = a.cx * sw; cy = a.cy * sh;
+  } else {
+    const f = useFace() ? it.face : null;
+    if (f && el.straighten.checked && Math.abs(f.ang) > 4 * RAD &&Math.abs(f.ang) <= 15 * RAD) ang = -f.ang;
+    const b = baseScale(sw, sh, ow, oh, ang, mode);
+    if (f) {
+      const frac = +el.head.value / 100, fh = f.h * sh;
+      s = Math.max(b, frac * oh / (fh * HEAD_K));
+      // Put the top of the head a little below the top edge and the face on the centre line.
+      const py = (1 - frac) * 0.4 * oh + (HEAD_UP + 0.5) * fh * s;
+      const dy = (py - oh / 2) / s;
+      cx = (f.x + f.w / 2) * sw - dy * Math.sin(ang);
+      cy = (f.y + f.h / 2) * sh - dy * Math.cos(ang);
+    } else {
+      s = b; cx = sw / 2;
+      cy = mode === 'crop' ? +el.anchor.value * sh : sh / 2;
+    }
+  }
+  const c = Math.abs(Math.cos(ang)), sn = Math.abs(Math.sin(ang));
+  const hx = (ow * c + oh * sn) / (2 * s), hy = (ow * sn + oh * c) / (2 * s);
+  cx = 2 * hx >= sw ? sw / 2 : clamp(cx, hx, sw - hx);
+  cy = 2 * hy >= sh ? sh / 2 : clamp(cy, hy, sh - hy);
+  return { s, cx, cy, ang };
+}
+// Sets a canvas transform so that drawing in source-photo units lands where the frame puts it.
+function frameT(ctx, it, W, H) {
+  if (el.mode.value === 'stretch') { ctx.setTransform(W / it.w, 0, 0, H / it.h, 0, 0); return; }
+  const T = xform(it, W, H);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(T.ang);
+  ctx.scale(T.s, T.s);
+  ctx.translate(-T.cx, -T.cy);
+}
+function filterCss(it) {
+  const b = it.bri != null ? it.bri : +el.bri.value, c = it.con != null ? it.con : +el.con.value;
+  return b || c ? 'brightness(' + (1 + b / 100) + ') contrast(' + (1 + c / 100) + ')' : 'none';
+}
+function place(img, it) {
+  const st = img.style;
+  st.filter = filterCss(it);
+  if (el.mode.value === 'stretch') {
+    st.left = st.top = '0'; st.width = st.height = '100%'; st.transform = 'none';
+    return;
+  }
+  const T = xform(it, out.w, out.h);
+  st.width = (it.w * T.s / out.w * 100) + '%';
+  st.height = (it.h * T.s / out.h * 100) + '%';
+  st.left = ((out.w / 2 - T.cx * T.s) / out.w * 100) + '%';
+  st.top = ((out.h / 2 - T.cy * T.s) / out.h * 100) + '%';
+  st.transformOrigin = (T.cx / it.w * 100) + '% ' + (T.cy / it.h * 100) + '%';
+  st.transform = 'rotate(' + T.ang + 'rad)';
+}
+const isEdited = it => !!it.adj || it.rot !== 0 || it.bri != null || it.con != null || it.strokes.length > 0;
+function flagsOf(it) {
+  if (it.ok || it.status !== 'ready') return [];
+  const a = el.flags.checked ? it.flags.slice() : [];
+  if (listRows && !it.meta) a.push('Not in the class list');
+  return a;
+}
+const baseName = it => it.rel.split('/').pop();
+const labelOf = it => (it.meta && (it.meta.name || it.meta.id)) || baseName(it);
+const classOf = it => (it.meta && it.meta.cls) || (it.rel.includes('/') ? it.rel.slice(0, it.rel.lastIndexOf('/')) : '');
+function paint(it) {
+  if (it.status !== 'ready') return;
+  place(it.img, it);
+  const fl = flagsOf(it);
+  it.el.classList.toggle('edited', isEdited(it));
+  it.el.classList.toggle('flag', fl.length > 0);
+  it.capEl.textContent = labelOf(it);
+  it.flagEl.textContent = fl[0] || '';
+  it.el.title = it.rel + (fl.length ? '\n' + fl.join(', ') : '');
+  if (it === current) {
+    place(el.edImg, it);
+    el.edFlag.hidden = el.edOk.hidden = !fl.length;
+    el.edFlag.textContent = 'Check: ' + fl.join(', ').toLowerCase();
+  }
+}
+function updateTools() {
+  const ready = items.filter(i => i.status === 'ready');
+  const flagged = ready.filter(i => flagsOf(i).length).length;
+  el.tools.hidden = !items.length;
+  if (!flagged) onlyFlag = false;
+  el.fAll.textContent = 'All photos (' + items.length + ')';
+  el.fFlag.textContent = 'To check (' + flagged + ')';
+  el.fFlag.disabled = !flagged;
+  el.fAll.classList.toggle('on', !onlyFlag);
+  el.fFlag.classList.toggle('on', onlyFlag);
+  el.grid.classList.toggle('onlyFlag', onlyFlag);
+}
+el.fAll.addEventListener('click', () => { onlyFlag = false; updateTools(); });
+el.fFlag.addEventListener('click', () => { onlyFlag = true; updateTools(); });
+
+/* ---------- loading photos ---------- */
+
+function toBlob(canvas, type, q) {
+  return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('Could not encode image')), type, q));
+}
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
+  return c;
+}
+function canvasOf(src) {
+  const c = makeCanvas(src.naturalWidth || src.width, src.naturalHeight || src.height);
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+// Preview images are kept as blobs alongside their URLs, so they can be decoded again even while the page is in a background tab.
+const blobs = new Map();
+function mkUrl(blob) {
+  const u = URL.createObjectURL(blob);
+  blobs.set(u, blob);
+  return u;
+}
+function freeUrl(u) {
+  if (!u) return;
+  URL.revokeObjectURL(u);
+  blobs.delete(u);
+}
+const loadImg = url => createImageBitmap(blobs.get(url));
+function rotateCanvas(src, sw, sh, quarterTurns) {
+  const odd = quarterTurns % 2 === 1;
+  const c = makeCanvas(odd ? sh : sw, odd ? sw : sh);
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate(quarterTurns * Math.PI / 2);
+  ctx.drawImage(src, -sw / 2, -sh / 2, sw, sh);
+  return c;
+}
+function addScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src.slice(0, 60)));
+    document.head.appendChild(s);
+  });
+}
+// passport-offline.js, when it sits next to this page, holds the face, background and HEIC tools so no internet is needed.
+let offlineP = null;
+function loadOffline() {
+  if (!offlineP) offlineP = addScript(window.PASSPORT_OFFLINE_SRC || 'passport-offline.js').then(() => window.PASSPORT_OFFLINE || null, () => null);
+  return offlineP;
+}
+function b64bytes(s) {
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+const b64url = (s, type) => URL.createObjectURL(new Blob([b64bytes(s)], { type }));
+
+let heicP = null;
+function loadHeic() {
+  if (!heicP) heicP = (async () => {
+    const off = await loadOffline();
+    await addScript(off && off.heic ? b64url(off.heic, 'text/javascript') : CDN.heic);
+    if (!window.heic2any) throw new Error('HEIC converter did not load');
+    return window.heic2any;
+  })().catch(e => { heicP = null; throw e; });
+  return heicP;
+}
+async function decodeItem(it) {
+  try {
+    return await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+  } catch (e) {
+    if (!HEIC_RE.test(it.name)) throw e;
+    const conv = await loadHeic();
+    const r = await conv({ blob: it.file, toType: 'image/jpeg', quality: 0.92 });
+    return createImageBitmap(Array.isArray(r) ? r[0] : r);
+  }
+}
+
+function addFiles(list) {
+  const fresh = [];
+  for (const { file, rel } of list) {
+    if (!EXT_RE.test(file.name)) { ignored++; continue; }
+    fresh.push({ file, rel: rel.replace(EXT_RE, ''), name: file.name, w: 0, h: 0, thumb: '', rot: 0, adj: null, bri: null, con: null,
+      face: null, faceDone: false, flags: [], ok: false, cutBase: null, cut: null, shown: '', strokes: [], meta: null, status: 'loading' });
+  }
+  fresh.sort((a, b) => a.rel.localeCompare(b.rel, undefined, { numeric: true, sensitivity: 'base' }));
+  for (const it of fresh) { items.push(it); makeTile(it); }
+  queue.push(...fresh);
+  showStatus('');
+  matchList();
+  updateCount();
+  pump();
+}
+function makeTile(it) {
+  const t = document.createElement('button');
+  t.type = 'button'; t.className = 'tile loading'; t.title = it.rel;
+  t.innerHTML = '<span class="frame"><img alt="" draggable="false"></span><span class="cap"></span><span class="flagtxt"></span>';
+  it.el = t; it.img = t.querySelector('img'); it.capEl = t.querySelector('.cap'); it.flagEl = t.querySelector('.flagtxt');
+  it.capEl.textContent = it.name;
+  t.addEventListener('click', () => { if (it.status === 'ready' && !busy) openEditor(it); });
+  el.grid.appendChild(t);
+}
+function pump() {
+  while (active < 3 && queue.length) {
+    const it = queue.shift();
+    active++;
+    loadThumb(it).finally(() => { active--; updateCount(); pump(); });
+  }
+}
+async function loadThumb(it) {
+  try {
+    const bmp = await decodeItem(it);
+    const s = Math.min(1, THUMB / Math.max(bmp.width, bmp.height));
+    const c = makeCanvas(bmp.width * s, bmp.height * s);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    it.w = bmp.width; it.h = bmp.height;
+    bmp.close();
+    const blob = await toBlob(c, 'image/webp', 0.8);
+    if (!items.includes(it)) return;
+    it.thumb = mkUrl(blob);
+    it.status = 'ready';
+    it.el.classList.remove('loading');
+    showThumb(it);
+    paint(it);
+    analyse();
+  } catch (e) {
+    it.status = 'error';
+    it.el.classList.remove('loading');
+    it.el.classList.add('error');
+    it.capEl.textContent = "Can't open: " + it.name;
+  }
+}
+function updateCount() {
+  const n = items.length;
+  el.empty.hidden = n > 0;
+  el.grid.hidden = n === 0;
+  el.clearWrap.hidden = n === 0;
+  if (!n) {
+    el.count.textContent = ignored ? 'No photos found in that selection.' : 'No photos loaded yet. You can also drag a folder onto this page.';
+  } else {
+    const loading = items.filter(i => i.status === 'loading').length;
+    const bad = items.filter(i => i.status === 'error').length;
+    let t = n + (n === 1 ? ' photo' : ' photos');
+    if (loading) t += ', reading ' + loading + ' more…';
+    if (bad) t += '. ' + bad + " couldn't be opened";
+    if (ignored) t += '. ' + ignored + ' other file' + (ignored === 1 ? '' : 's') + ' ignored';
+    el.count.textContent = t + '.';
+  }
+  updateButtons();
+  updateTools();
+}
+function removeItem(it) {
+  const i = items.indexOf(it);
+  if (i < 0) return;
+  items.splice(i, 1);
+  it.el.remove();
+  freeUrl(it.thumb);
+  dropCut(it);
+}
+
+el.pickFolder.addEventListener('click', () => el.folderInput.click());
+el.pickFiles.addEventListener('click', () => el.filesInput.click());
+el.folderInput.addEventListener('change', () => {
+  // webkitRelativePath is "ChosenFolder/sub/name.jpg"; drop the chosen folder's own name.
+  addFiles([...el.folderInput.files].map(f => ({ file: f, rel: (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name })));
+  el.folderInput.value = '';
+});
+el.filesInput.addEventListener('change', () => {
+  addFiles([...el.filesInput.files].map(f => ({ file: f, rel: f.name })));
+  el.filesInput.value = '';
+});
+el.clear.addEventListener('click', () => {
+  if (busy) return;
+  for (const it of items.slice()) removeItem(it);
+  queue.length = 0; ignored = 0;
+  showStatus('');
+  matchList();
+  updateCount();
+});
+
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', async e => {
+  e.preventDefault();
+  dragDepth = 0; document.body.classList.remove('dragging');
+  if (busy) return;
+  const dt = e.dataTransfer;
+  const entries = [...dt.items].map(i => i.webkitGetAsEntry ? i.webkitGetAsEntry() : null).filter(Boolean);
+  const plain = [...dt.files];
+  const list = [];
+  async function walk(entry, prefix, isRoot) {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej));
+      list.push({ file: f, rel: prefix + f.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const childPrefix = isRoot ? prefix : prefix + entry.name + '/';
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, childPrefix, false);
+      }
+    }
+  }
+  try {
+    if (entries.length) for (const en of entries) await walk(en, '', true);
+    else for (const f of plain) list.push({ file: f, rel: f.name });
+  } catch (err) {
+    showStatus("Couldn't read the dropped folder. Try the Choose a folder button instead.", true);
+    return;
+  }
+  addFiles(list);
+});
+
+/* ---------- face detection, problem flags and background removal ---------- */
+
+let visionP = null, segP = null, faceP = null, segmenter = null, faceDet = null, anBusy = false;
+
+function loadVision() {
+  if (!visionP) visionP = (async () => {
+    const off = await loadOffline();
+    if (off && off.bundle) {
+      const vision = await import(b64url(off.bundle, 'text/javascript'));
+      const files = { wasmLoaderPath: b64url(off.loader, 'text/javascript'), wasmBinaryPath: b64url(off.wasm, 'application/wasm') };
+      return { vision, files, seg: () => ({ modelAssetBuffer: b64bytes(off.seg) }), face: () => ({ modelAssetBuffer: b64bytes(off.face) }) };
+    }
+    const vision = await import(CDN.mp + '/vision_bundle.mjs');
+    const files = await vision.FilesetResolver.forVisionTasks(CDN.mp + '/wasm');
+    return { vision, files, seg: () => ({ modelAssetPath: CDN.seg }), face: () => ({ modelAssetPath: CDN.face }) };
+  })().catch(e => { visionP = null; throw e; });
+  return visionP;
+}
+function ensureSeg() {
+  if (!segP) segP = (async () => {
+    const v = await loadVision();
+    segmenter = await v.vision.ImageSegmenter.createFromOptions(v.files, {
+      baseOptions: Object.assign(v.seg(), { delegate: 'CPU' }),
+      runningMode: 'IMAGE', outputCategoryMask: false, outputConfidenceMasks: true,
+    });
+  })().catch(e => { segP = null; throw e; });
+  return segP;
+}
+function ensureFace() {
+  if (!faceP) faceP = (async () => {
+    const v = await loadVision();
+    faceDet = await v.vision.FaceDetector.createFromOptions(v.files, {
+      baseOptions: Object.assign(v.face(), { delegate: 'CPU' }), runningMode: 'IMAGE', minDetectionConfidence: 0.5,
+    });
+  })().catch(e => { faceP = null; throw e; });
+  return faceP;
+}
+
+// Finds the face in a preview-sized canvas and works out what, if anything, looks wrong with the photo.
+function detectFace(it, c) {
+  const W = c.width, H = c.height;
+  const ds = faceDet.detect(c).detections.map(d => ({
+    x: d.boundingBox.originX / W, y: d.boundingBox.originY / H, w: d.boundingBox.width / W, h: d.boundingBox.height / H, kp: d.keypoints || [],
+  })).sort((a, b) => b.w * b.h - a.w * a.h);
+  const flags = [];
+  const px = c.getContext('2d').getImageData(0, 0, W, H).data;
+  let lum = 0;
+  for (let i = 0; i < px.length; i += 16) lum += 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+  if (lum / (px.length / 16) < 45) flags.push('Photo looks dark');
+  if (!ds.length) {
+    it.face = null;
+    flags.unshift('No face found');
+  } else {
+    const f = ds[0];
+    // Look again at a close crop of the face: the eye positions, and so the tilt, are much more exact there.
+    const size = Math.max(f.w * W, f.h * H) * 2, t = makeCanvas(256, 256);
+    t.getContext('2d').drawImage(c, (f.x + f.w / 2) * W - size / 2, (f.y + f.h / 2) * H - size / 2, size, size, 0, 0, 256, 256);
+    const near = faceDet.detect(t).detections.sort((a, b) => b.boundingBox.width - a.boundingBox.width)[0];
+    const kp = near && near.keypoints && near.keypoints.length >= 2 ? near.keypoints : null;
+    let ang = 0;
+    if (kp) {
+      let a = kp[0], b = kp[1];               // the two eyes
+      if (a.x > b.x) [a, b] = [b, a];
+      ang = Math.atan2(b.y - a.y, b.x - a.x);
+    }
+    it.face = { x: f.x, y: f.y, w: f.w, h: f.h, ang };
+    if (ds.some((d, i) => i > 0 && d.w * d.h > 0.25 * f.w * f.h)) flags.push('More than one face');
+    if (f.x < 0.005 || f.x + f.w > 0.995 || f.y + f.h > 0.995 || f.y - HEAD_UP * f.h < -0.03) flags.push('Head may be cut off');
+    if (f.h * it.h < 70) flags.push('Face is very small');
+    if (Math.abs(ang) > 15 * RAD) flags.push('Head is tilted');
+    if (sharpness(c, f) < BLUR_T) flags.push('May be blurry');
+  }
+  it.flags = flags;
+  it.faceDone = true;
+}
+// Edge strength of the face at roughly the size it will be saved; low numbers mean a soft or out-of-focus face.
+function sharpness(c, f) {
+  const N = 64, t = makeCanvas(N, N), ctx = t.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(c, f.x * c.width, f.y * c.height, f.w * c.width, f.h * c.height, 0, 0, N, N);
+  const d = ctx.getImageData(0, 0, N, N).data, g = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let sum = 0, sq = 0, n = 0;
+  for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
+    const i = y * N + x, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - N] - g[i + N];
+    sum += l; sq += l * l; n++;
+  }
+  return sq / n - (sum / n) * (sum / n);
+}
+// Makes everything that isn't the person transparent, in place.
+function cutout(canvas) {
+  const w = canvas.width, h = canvas.height;
+  const res = segmenter.segment(canvas);
+  const mask = res.confidenceMasks[0]; // channel 0 is "background"
+  const mw = mask.width, mh = mask.height;
+  const conf = mask.getAsFloat32Array();
+  const small = makeCanvas(mw, mh);
+  const id = new ImageData(mw, mh);
+  for (let i = 0; i < conf.length; i++) id.data[i * 4 + 3] = (1 - conf[i]) * 255;
+  small.getContext('2d').putImageData(id, 0, 0);
+  res.close();
+  const big = makeCanvas(w, h);
+  const bctx = big.getContext('2d');
+  bctx.imageSmoothingQuality = 'high';
+  bctx.drawImage(small, 0, 0, w, h);
+  const m = bctx.getImageData(0, 0, w, h).data;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 3; i < d.length; i += 4) {
+    // Tighten the soft edge so less of the old background shows as a halo.
+    let a = (m[i] / 255 - 0.35) / 0.4;
+    a = a <= 0 ? 0 : a >= 1 ? 1 : a * a * (3 - 2 * a);
+    d[i] = d[i] * a;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+// Brush strokes are stored in source-photo units so they apply to the preview and to any saved size.
+function strokePath(ctx, it, st) {
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.lineWidth = st.r * 2 * it.w;
+  ctx.beginPath();
+  st.pts.forEach((p, i) => { if (i) ctx.lineTo(p[0] * it.w, p[1] * it.h); else ctx.moveTo(p[0] * it.w, p[1] * it.h); });
+  if (st.pts.length === 1) ctx.lineTo(st.pts[0][0] * it.w + 0.01, st.pts[0][1] * it.h);
+  ctx.stroke();
+}
+function applyStrokes(cut, orig, it, setT) {
+  const ctx = cut.getContext('2d');
+  for (const st of it.strokes) {
+    if (st.mode === 'erase') {
+      ctx.save(); setT(ctx);
+      ctx.globalCompositeOperation = 'destination-out';
+      strokePath(ctx, it, st);
+      ctx.restore();
+    } else {
+      const tmp = makeCanvas(cut.width, cut.height), t = tmp.getContext('2d');
+      t.save(); setT(t); strokePath(t, it, st); t.restore();
+      t.globalCompositeOperation = 'source-in';
+      t.drawImage(orig, 0, 0);
+      ctx.drawImage(tmp, 0, 0);
+    }
+  }
+}
+// Rebuilds the cut-out preview from the automatic cut-out plus the user's brush strokes.
+async function recut(it) {
+  if (!it.cutBase) return;
+  const old = it.cut;
+  if (!it.strokes.length) {
+    it.cut = it.cutBase;
+  } else {
+    const base = it.cutBase, thumb = it.thumb;
+    const c = canvasOf(await loadImg(base)), orig = canvasOf(await loadImg(thumb));
+    applyStrokes(c, orig, it, ctx => ctx.setTransform(c.width / it.w, 0, 0, c.height / it.h, 0, 0));
+    const blob = await toBlob(c, 'image/webp', 0.9);
+    if (it.cutBase !== base) return;
+    it.cut = mkUrl(blob);
+  }
+  if (old && old !== it.cut && old !== it.cutBase) freeUrl(old);
+  showThumb(it);
+}
+function dropCut(it) {
+  if (it.cut !== it.cutBase) freeUrl(it.cut);
+  freeUrl(it.cutBase);
+  it.cut = it.cutBase = null;
+}
+function showThumb(it) {
+  if (it.status !== 'ready') return;
+  const want = bgColor() && it.cut ? it.cut : it.thumb;
+  if (it.shown === want) return;
+  it.shown = want;
+  it.img.src = want;
+  if (it === current) el.edImg.src = want;
+}
+// Works through the photos that still need a face check or a cut-out, one at a time, without blocking the page.
+async function analyse() {
+  for (const it of items) showThumb(it);
+  const needFace = i => wantFaces() && !i.faceDone, needCut = i => !!bgColor() && !i.cutBase;
+  const todo = () => items.filter(i => i.status === 'ready' && (needFace(i) || needCut(i)));
+  if (anBusy) return;
+  if (!todo().length) { el.anText.textContent = ''; return; }
+  anBusy = true;
+  try {
+    el.anText.textContent = 'Getting the photo tools ready…';
+    for (let list; (list = todo()).length;) {
+      const it = list[0], doFace = needFace(it), doCut = needCut(it);
+      if (doFace) await ensureFace();
+      if (doCut) await ensureSeg();
+      el.anText.textContent = 'Checking photos, ' + list.length + ' to go…';
+      const src = it.thumb;
+      const c = canvasOf(await loadImg(src));
+      let blob = null;
+      if (doCut) { const k = canvasOf(c); cutout(k); blob = await toBlob(k, 'image/webp', 0.9); }
+      await tick();
+      if (it.thumb !== src || !items.includes(it)) continue; // turned or removed meanwhile
+      if (doFace) detectFace(it, c);
+      if (blob) { it.cutBase = mkUrl(blob); await recut(it); }
+      paint(it);
+      updateTools();
+    }
+    el.anText.textContent = '';
+  } catch (e) {
+    console.error(e);
+    el.anText.textContent = '';
+    el.face.checked = el.flags.checked = false;
+    el.bgmode.value = 'keep';
+    refresh();
+    showStatus(MODEL_FAIL, true);
+  } finally {
+    anBusy = false;
+  }
+}
+
+/* ---------- per-photo editor ---------- */
+
+let tool = 'move';
+function materialise(it) {
+  if (it.adj) return;
+  const T = xform(it, out.w, out.h);
+  const b = baseScale(it.w, it.h, out.w, out.h, T.ang, el.mode.value);
+  it.adj = { cx: T.cx / it.w, cy: T.cy / it.h, zoom: T.s / b, ang: T.ang / RAD };
+}
+function commit(it) {
+  const T = xform(it, out.w, out.h);
+  it.adj.cx = T.cx / it.w; it.adj.cy = T.cy / it.h;
+  paint(it);
+}
+function editList() {
+  return items.filter(i => i.status === 'ready' && (!onlyFlag || i === current || flagsOf(i).length));
+}
+function openEditor(it) {
+  current = it;
+  const stretch = el.mode.value === 'stretch';
+  el.edName.textContent = labelOf(it);
+  el.edImg.src = it.shown || it.thumb;
+  const maxW = Math.min(innerWidth - 80, 380), maxH = Math.min(innerHeight * 0.6, 480);
+  el.edFrame.style.width = Math.round(out.w * Math.min(maxW / out.w, maxH / out.h)) + 'px';
+  const T = xform(it, out.w, out.h);
+  el.edZoom.value = T.s / baseScale(it.w, it.h, out.w, out.h, T.ang, el.mode.value);
+  el.edAng.value = T.ang / RAD;
+  el.edAngVal.textContent = (+el.edAng.value).toFixed(1) + '°';
+  el.edBri.value = it.bri != null ? it.bri : el.bri.value;
+  el.edCon.value = it.con != null ? it.con : el.con.value;
+  el.edZoom.disabled = el.edAng.disabled = stretch;
+  el.edToolWrap.hidden = !bgColor();
+  if (!bgColor()) setTool('move');
+  el.edHint.textContent = tool !== 'move' ? 'Paint over the part to ' + (tool === 'keep' ? 'bring back.' : 'remove.')
+    : stretch ? 'Stretch mode fills the frame, so there is nothing to move.' : 'Drag the photo to move it. Scroll to zoom.';
+  paint(it);
+  const list = editList(), i = list.indexOf(it);
+  el.edPrev.disabled = i <= 0;
+  el.edNext.disabled = i >= list.length - 1;
+  if (!el.editor.open) el.editor.showModal();
+}
+function setTool(t) {
+  tool = t;
+  for (const b of el.edTools.children) b.classList.toggle('on', b.dataset.tool === t);
+  el.edBrushWrap.hidden = t === 'move';
+  el.edFrame.classList.toggle('brush', t !== 'move');
+}
+el.edTools.addEventListener('click', e => {
+  if (e.target.dataset.tool) { setTool(e.target.dataset.tool); if (current) openEditor(current); }
+});
+function step(d) {
+  const list = editList();
+  const next = list[list.indexOf(current) + d];
+  if (next) openEditor(next);
+}
+// Pointer position in source-photo units (0..1 of the photo's width and height).
+function pointerSrc(e) {
+  const it = current, r = el.edFrame.getBoundingClientRect();
+  if (el.mode.value === 'stretch') return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  const f = r.width / out.w, T = xform(it, out.w, out.h);
+  const ox = (e.clientX - r.left) / f - out.w / 2, oy = (e.clientY - r.top) / f - out.h / 2;
+  const c = Math.cos(T.ang), s = Math.sin(T.ang);
+  return [(T.cx + (ox * c + oy * s) / T.s) / it.w, (T.cy + (-ox * s + oy * c) / T.s) / it.h];
+}
+
+let drag = null, stroke = null;
+el.edFrame.addEventListener('pointerdown', e => {
+  const it = current;
+  if (!it) return;
+  el.edFrame.setPointerCapture(e.pointerId);
+  if (tool === 'move') {
+    if (el.mode.value !== 'stretch') drag = { x: e.clientX, y: e.clientY };
+    return;
+  }
+  const r = el.edFrame.getBoundingClientRect();
+  const scale = el.mode.value === 'stretch' ? r.width / it.w : xform(it, out.w, out.h).s * r.width / out.w;
+  stroke = { mode: tool, r: (+el.edBrush.value / 2) / scale / it.w, pts: [pointerSrc(e)], last: [e.clientX - r.left, e.clientY - r.top] };
+  el.edOverlay.width = r.width; el.edOverlay.height = r.height;
+  drawOverlay(stroke.last, stroke.last);
+});
+function drawOverlay(a, b) {
+  const ctx = el.edOverlay.getContext('2d');
+  ctx.strokeStyle = stroke.mode === 'keep' ? 'rgba(30,160,70,.55)' : 'rgba(210,40,40,.55)';
+  ctx.lineWidth = +el.edBrush.value; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0] + 0.01, b[1]); ctx.stroke();
+}
+el.edFrame.addEventListener('pointermove', e => {
+  const it = current;
+  if (!it) return;
+  if (stroke) {
+    const r = el.edFrame.getBoundingClientRect(), p = [e.clientX - r.left, e.clientY - r.top];
+    stroke.pts.push(pointerSrc(e));
+    drawOverlay(stroke.last, p);
+    stroke.last = p;
+  } else if (drag) {
+    materialise(it);
+    const T = xform(it, out.w, out.h), f = el.edFrame.clientWidth / out.w;
+    const dx = (e.clientX - drag.x) / f, dy = (e.clientY - drag.y) / f;
+    const c = Math.cos(T.ang), s = Math.sin(T.ang);
+    it.adj.cx = (T.cx - (dx * c + dy * s) / T.s) / it.w;
+    it.adj.cy = (T.cy - (-dx * s + dy * c) / T.s) / it.h;
+    drag = { x: e.clientX, y: e.clientY };
+    commit(it);
+  }
+});
+function endPointer() {
+  drag = null;
+  if (stroke && current) {
+    const it = current;
+    it.strokes.push({ mode: stroke.mode, r: stroke.r, pts: stroke.pts });
+    stroke = null;
+    recut(it).then(() => {
+      el.edOverlay.getContext('2d').clearRect(0, 0, el.edOverlay.width, el.edOverlay.height);
+      paint(it);
+    });
+  }
+  stroke = null;
+}
+el.edFrame.addEventListener('pointerup', endPointer);
+el.edFrame.addEventListener('pointercancel', endPointer);
+el.edUndo.addEventListener('click', () => {
+  const it = current;
+  if (it && it.strokes.length) { it.strokes.pop(); recut(it).then(() => paint(it)); }
+});
+function setZoom(z) {
+  const it = current;
+  if (!it || el.mode.value === 'stretch') return;
+  materialise(it);
+  it.adj.zoom = clamp(z, 1, 6);
+  el.edZoom.value = it.adj.zoom;
+  commit(it);
+}
+el.edFrame.addEventListener('wheel', e => {
+  if (!current || tool !== 'move') return;
+  e.preventDefault();
+  setZoom(+el.edZoom.value * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
+}, { passive: false });
+el.edZoom.addEventListener('input', () => setZoom(+el.edZoom.value));
+el.edAng.addEventListener('input', () => {
+  const it = current;
+  if (!it) return;
+  materialise(it);
+  it.adj.ang = +el.edAng.value;
+  el.edAngVal.textContent = it.adj.ang.toFixed(1) + '°';
+  commit(it);
+});
+el.edBri.addEventListener('input', () => { if (current) { current.bri = +el.edBri.value; paint(current); } });
+el.edCon.addEventListener('input', () => { if (current) { current.con = +el.edCon.value; paint(current); } });
+
+async function turn(it, dir) {
+  const im = await loadImg(it.thumb);
+  const c = rotateCanvas(im, im.width, im.height, dir);
+  const blob = await toBlob(c, 'image/webp', 0.85);
+  freeUrl(it.thumb);
+  it.thumb = mkUrl(blob);
+  it.rot = (it.rot + dir) % 4;
+  [it.w, it.h] = [it.h, it.w];
+  it.adj = null; it.strokes = []; it.face = null; it.faceDone = false; it.flags = [];
+  dropCut(it);
+  showThumb(it);
+}
+async function turnCurrent(dir) {
+  const it = current;
+  if (!it) return;
+  await turn(it, dir);
+  if (current === it) openEditor(it);
+  analyse();
+}
+el.edRotL.addEventListener('click', () => turnCurrent(3));
+el.edRotR.addEventListener('click', () => turnCurrent(1));
+el.edReset.addEventListener('click', async () => {
+  const it = current;
+  if (!it) return;
+  if (it.rot) await turn(it, 4 - it.rot);
+  it.adj = null; it.bri = it.con = null; it.ok = false;
+  if (it.strokes.length) { it.strokes = []; await recut(it); }
+  if (current === it) openEditor(it);
+  updateTools();
+  analyse();
+});
+el.edOk.addEventListener('click', () => {
+  const it = current;
+  if (!it) return;
+  it.ok = true;
+  const list = editList(), next = list[list.indexOf(it) + 1];
+  paint(it);
+  updateTools();
+  if (onlyFlag && next) openEditor(next);
+});
+el.edRemove.addEventListener('click', () => {
+  const it = current;
+  if (!it) return;
+  const list = editList(), i = list.indexOf(it);
+  const next = list[i + 1] || list[i - 1];
+  removeItem(it);
+  matchList();
+  updateCount();
+  if (next) openEditor(next); else el.editor.close();
+});
+el.edPrev.addEventListener('click', () => step(-1));
+el.edNext.addEventListener('click', () => step(1));
+el.edDone.addEventListener('click', () => el.editor.close());
+el.editor.addEventListener('close', () => { current = null; setTool('move'); });
+el.editor.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+});
+addEventListener('resize', () => { if (current) openEditor(current); });
+
+/* ---------- class list ---------- */
+
+function parseTable(text) {
+  const first = text.split('\n')[0];
+  const delim = text.includes('\t') ? '\t' : first.split(';').length > first.split(',').length ? ';' : ',';
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (ch !== '\r') cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+// Reads the first sheet of an .xlsx file (a ZIP of XML files) using the browser's own unzip.
+async function readXlsx(buf) {
+  const u = new Uint8Array(buf), dv = new DataView(buf), td = new TextDecoder();
+  let e = u.length - 22;
+  while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('This is not an Excel .xlsx file');
+  const n = dv.getUint16(e + 10, true), files = {};
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < n; i++) {
+    const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+    files[td.decode(u.subarray(p + 46, p + 46 + nl))] = { method: dv.getUint16(p + 10, true), csize: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) };
+    p += 46 + nl + xl + cl;
+  }
+  const read = async name => {
+    const f = files[name];
+    if (!f) return null;
+    const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true);
+    const data = u.subarray(start, start + f.csize);
+    if (f.method === 0) return td.decode(data);
+    return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+  const xml = x => new DOMParser().parseFromString(x, 'application/xml');
+  const num = k => parseInt(k.match(/sheet(\d+)\.xml$/)[1], 10);
+  const sheet = Object.keys(files).filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort((a, b) => num(a) - num(b))[0];
+  if (!sheet) throw new Error('No sheet found in that Excel file');
+  const ssx = await read('xl/sharedStrings.xml');
+  const strings = ssx ? [...xml(ssx).getElementsByTagName('si')].map(si => [...si.getElementsByTagName('t')].map(t => t.textContent).join('')) : [];
+  const rows = [];
+  for (const r of xml(await read(sheet)).getElementsByTagName('row')) {
+    const row = [];
+    for (const c of r.getElementsByTagName('c')) {
+      const letters = (c.getAttribute('r') || '').replace(/\d/g, '');
+      let col = 0;
+      for (const ch of letters) col = col * 26 + ch.charCodeAt(0) - 64;
+      col = letters ? col - 1 : row.length;
+      const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+      let val = t === 's' ? strings[+(v && v.textContent)] || ''
+        : t === 'inlineStr' ? [...c.getElementsByTagName('t')].map(x => x.textContent).join('')
+        : v ? v.textContent : '';
+      if (t !== 's' && /^\d+(\.\d+)?E\+?\d+$/i.test(val)) val = String(Number(val));
+      row[col] = val;
+    }
+    rows.push(Array.from(row, x => x == null ? '' : x));
+  }
+  return rows;
+}
+function setList(rows) {
+  rows = rows.map(r => r.map(c => String(c == null ? '' : c).trim())).filter(r => r.some(Boolean));
+  if (!rows.length) { el.listInfo.textContent = 'That list is empty.'; return; }
+  const H = {
+    file: /^(file|photo|picture|image)( ?names?)?$/i,
+    id: /^((student |index |admission )?(id|index|admission)( ?(no|number|num))?\.?|no\.?|number)$/i,
+    name: /^(full ?|student ?)?names?$/i,
+    cls: /^(class|form|grade|level|stream)$/i,
+  };
+  const cols = { file: -1, id: -1, name: -1, cls: -1 };
+  rows[0].forEach((c, i) => { for (const k in H) if (cols[k] < 0 && H[k].test(c)) { cols[k] = i; break; } });
+  if (Object.values(cols).some(v => v >= 0)) {
+    rows.shift();
+  } else {
+    const n = Math.max(...rows.map(r => r.length));
+    if (n === 1) cols.name = 0;
+    else { cols.file = 0; cols.id = 1; if (n > 2) cols.name = 2; if (n > 3) cols.cls = 3; }
+  }
+  listRows = rows; listCols = cols;
+  matchList();
+}
+function matchList() {
+  for (const it of items) it.meta = null;
+  el.listClear.hidden = !listRows;
+  if (!listRows) {
+    el.listInfo.textContent = '';
+  } else {
+    const { file, id, name, cls } = listCols;
+    const meta = r => ({ id: id >= 0 ? r[id] || '' : '', name: name >= 0 ? r[name] || '' : '', cls: cls >= 0 ? r[cls] || '' : '' });
+    let matched = 0, orphan = 0;
+    if (file >= 0) {
+      const map = new Map();
+      for (const it of items) { map.set(it.rel.toLowerCase(), it); if (!map.has(baseName(it).toLowerCase())) map.set(baseName(it).toLowerCase(), it); }
+      for (const r of listRows) {
+        const key = (r[file] || '').replace(/\\/g, '/').replace(EXT_RE, '').toLowerCase().trim();
+        const it = map.get(key) || map.get(key.split('/').pop());
+        if (it && !it.meta) { it.meta = meta(r); matched++; } else orphan++;
+      }
+    } else {
+      listRows.forEach((r, i) => { if (items[i]) { items[i].meta = meta(r); matched++; } else orphan++; });
+    }
+    let t = 'List of ' + listRows.length + ': ' + matched + ' of ' + items.length + ' photos matched' + (file >= 0 ? ' by file name' : ' in order') + '.';
+    if (orphan) t += ' ' + orphan + ' row' + (orphan === 1 ? ' has' : 's have') + ' no photo.';
+    el.listInfo.textContent = t;
+  }
+  for (const it of items) paint(it);
+  updateTools();
+}
+el.pickList.addEventListener('click', () => el.listFile.click());
+el.listFile.addEventListener('change', async () => {
+  const f = el.listFile.files[0];
+  el.listFile.value = '';
+  if (!f) return;
+  try {
+    setList(/\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : parseTable(await f.text()));
+  } catch (e) {
+    el.listInfo.textContent = "Couldn't read that file: " + e.message;
+  }
+});
+el.listApply.addEventListener('click', () => setList(parseTable(el.listPaste.value)));
+el.listClear.addEventListener('click', () => { listRows = listCols = null; matchList(); });
+
+const cleanName = s => s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/^[ .]+|[ .]+$/g, '');
+// Output path without extension: the list's ID or name when there is one, in the photo's original subfolder.
+function fileBase(it) {
+  const mode = el.nameMode.value, m = it.meta;
+  const pick = !m || mode === 'orig' ? '' : cleanName(mode === 'id' ? m.id || m.name : m.name || m.id);
+  if (!pick) return it.rel;
+  return (it.rel.includes('/') ? it.rel.slice(0, it.rel.lastIndexOf('/') + 1) : '') + pick;
+}
+
+/* ---------- rendering ---------- */
+
+// Halve repeatedly before a final draw; one big downscale looks jagged.
+function shrink(src, w, h, targetW) {
+  let cur = src;
+  while (w / 2 >= targetW && w > 2 && h > 2) {
+    const c = makeCanvas(w / 2, h / 2);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cur, 0, 0, c.width, c.height);
+    cur = c; w = c.width; h = c.height;
+  }
+  return cur;
+}
+// The photo framed as set, on a W × H canvas. src is the upright photo at any resolution; fill = null leaves the canvas transparent.
+function drawPhoto(it, src, W, H, fill) {
+  const c = makeCanvas(W, H), ctx = c.getContext('2d');
+  if (fill) { ctx.fillStyle = fill; ctx.fillRect(0, 0, W, H); }
+  frameT(ctx, it, W, H);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.filter = filterCss(it);
+  ctx.drawImage(src, 0, 0, it.w, it.h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.filter = 'none';
+  return c;
+}
+function coverage(c) {
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 64) if (d[i] > 128) n++;
+  return n / (d.length / 64);
+}
+async function renderFrom(it, bmp, o) {
+  const bgc = bgColor();
+  // With background removal, work at a larger size so the cut-out edge is clean, then scale down onto the colour.
+  const k = bgc ? Math.max(1, 512 / Math.max(o.w, o.h)) : 1;
+  const W = Math.round(o.w * k), H = Math.round(o.h * k);
+  const need = el.mode.value === 'stretch' ? W : it.w * xform(it, W, H).s;
+  let src = shrink(bmp, bmp.width, bmp.height, bmp.width * need / it.w);
+  if (it.rot) src = rotateCanvas(src, src.width, src.height, it.rot);
+  if (!bgc) return drawPhoto(it, src, W, H, el.mode.value === 'fit' ? el.bg.value : '#ffffff');
+  const person = drawPhoto(it, src, W, H, null);
+  const orig = canvasOf(person);
+  cutout(person);
+  if (it.cutBase && coverage(person) < 0.03) {
+    // The remover found nobody in the close-up. Use the cut-out made for the preview, so the saved photo matches what was shown.
+    const m = await loadImg(it.cutBase), pc = person.getContext('2d');
+    pc.clearRect(0, 0, W, H);
+    pc.drawImage(orig, 0, 0);
+    pc.globalCompositeOperation = 'destination-in';
+    frameT(pc, it, W, H);
+    pc.drawImage(m, 0, 0, it.w, it.h);
+    pc.setTransform(1, 0, 0, 1, 0, 0);
+    pc.globalCompositeOperation = 'source-over';
+  }
+  if (it.strokes.length) applyStrokes(person, orig, it, ctx => frameT(ctx, it, W, H));
+  const final = makeCanvas(o.w, o.h), ctx = final.getContext('2d');
+  ctx.fillStyle = bgc;
+  ctx.fillRect(0, 0, o.w, o.h);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(shrink(person, W, H, o.w), 0, 0, o.w, o.h);
+  return final;
+}
+async function renderCanvas(it, o) {
+  const bmp = await decodeItem(it);
+  try { return await renderFrom(it, bmp, o); } finally { bmp.close(); }
+}
+async function encode(canvas, fmt, q, maxBytes, dpi) {
+  let blob;
+  if (fmt === 'png') {
+    blob = await toBlob(canvas, 'image/png');
+  } else {
+    blob = await toBlob(canvas, 'image/jpeg', q);
+    if (maxBytes && blob.size > maxBytes) {
+      let lo = 0.1, hi = q, best = null;
+      for (let i = 0; i < 7; i++) {
+        const mid = (lo + hi) / 2;
+        const b = await toBlob(canvas, 'image/jpeg', mid);
+        if (b.size <= maxBytes) { best = b; lo = mid; } else hi = mid;
+      }
+      blob = best || await toBlob(canvas, 'image/jpeg', 0.1);
+    }
+  }
+  if (!dpi) return blob;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return fmt === 'png' ? pngWithDpi(bytes, dpi) : jpegWithDpi(bytes, dpi);
+}
+// Printers read the physical size from these headers, so a 35 × 45 mm photo prints at 35 × 45 mm.
+function jpegWithDpi(b, dpi) {
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF && b[3] === 0xE0 && b[6] === 0x4A && b[7] === 0x46 && b[8] === 0x49 && b[9] === 0x46) {
+    b[13] = 1; b[14] = dpi >> 8; b[15] = dpi & 255; b[16] = dpi >> 8; b[17] = dpi & 255;
+  }
+  return new Blob([b], { type: 'image/jpeg' });
+}
+function pngWithDpi(b, dpi) {
+  const ppm = Math.round(dpi / 0.0254);
+  const chunk = new Uint8Array(21);
+  const dv = new DataView(chunk.buffer);
+  dv.setUint32(0, 9);
+  chunk.set([0x70, 0x48, 0x59, 0x73], 4); // "pHYs"
+  dv.setUint32(8, ppm); dv.setUint32(12, ppm); chunk[16] = 1;
+  dv.setUint32(17, crc32(chunk.subarray(4, 17)));
+  return new Blob([b.subarray(0, 33), chunk, b.subarray(33)], { type: 'image/png' });
+}
+
+const CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+// Minimal ZIP writer (stored, no compression; JPG and PNG are already compressed).
+function makeZip(entries) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = enc.encode(e.name), crc = crc32(e.data), size = e.data.length;
+    const lh = new Uint8Array(30), l = new DataView(lh.buffer);
+    l.setUint32(0, 0x04034b50, true); l.setUint16(4, 20, true); l.setUint16(6, 0x0800, true);
+    l.setUint16(10, time, true); l.setUint16(12, date, true); l.setUint32(14, crc, true);
+    l.setUint32(18, size, true); l.setUint32(22, size, true); l.setUint16(26, name.length, true);
+    parts.push(lh, name, e.data);
+    const ch = new Uint8Array(46), c = new DataView(ch.buffer);
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(12, time, true); c.setUint16(14, date, true); c.setUint32(16, crc, true);
+    c.setUint32(20, size, true); c.setUint32(24, size, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, offset, true);
+    central.push(ch, name);
+    offset += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((n, p) => n + p.length, 0);
+  const end = new Uint8Array(22), d = new DataView(end.buffer);
+  d.setUint32(0, 0x06054b50, true); d.setUint16(8, entries.length, true); d.setUint16(10, entries.length, true);
+  d.setUint32(12, cdSize, true); d.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+
+/* ---------- saving ---------- */
+
+function showStatus(text, warn) {
+  el.status.textContent = text;
+  el.status.classList.toggle('warn', !!warn);
+}
+function setBusy(b) {
+  busy = b;
+  document.querySelectorAll('aside details').forEach(d => { d.inert = b; });
+  el.prog.hidden = !b;
+  updateButtons();
+}
+function uniquePath(base, ext, used) {
+  let p = base + '.' + ext, n = 1;
+  while (used.has(p.toLowerCase())) p = base + '_' + (++n) + '.' + ext;
+  used.add(p.toLowerCase());
+  return p;
+}
+function fmtBytes(n) {
+  return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+async function readyTools() {
+  if (!bgColor() || segmenter) return true;
+  showStatus('Getting the background remover ready…');
+  try { await ensureSeg(); return true; }
+  catch (e) { showStatus(MODEL_FAIL, true); return false; }
+}
+
+async function run(kind) {
+  const sizes = sizeList();
+  const ready = items.filter(i => i.status === 'ready');
+  if (!sizes || !ready.length || busy) return;
+  const fmt = el.fmt.value, ext = fmt === 'png' ? 'png' : 'jpg';
+  const q = +el.q.value / 100;
+  const maxBytes = fmt === 'jpg' && +el.maxkb.value > 0 ? +el.maxkb.value * 1024 : 0;
+  const folderOf = s => 'passport_' + s.w + 'x' + s.h;
+  let sink, finish;
+
+  if (kind === 'folder') {
+    let root;
+    try { root = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+    catch (e) { if (e.name !== 'AbortError') showStatus("Couldn't open that folder: " + e.message, true); return; }
+    sink = async (path, blob) => {
+      const segs = path.split('/');
+      let dir = root;
+      for (const s of segs.slice(0, -1)) dir = await dir.getDirectoryHandle(s, { create: true });
+      const fh = await dir.getFileHandle(segs[segs.length - 1], { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+    };
+    finish = async () => 'in "' + root.name + '", under ' + sizes.map(folderOf).join(', ');
+  } else {
+    const entries = [];
+    sink = async (path, blob) => { entries.push({ name: path, data: new Uint8Array(await blob.arrayBuffer()) }); };
+    finish = async () => {
+      const name = (sizes.length === 1 ? folderOf(sizes[0]) : 'passport_photos') + '.zip';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(makeZip(entries));
+      a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      return 'as ' + name + ' in your Downloads folder';
+    };
+  }
+  if (!await readyTools()) return;
+
+  setBusy(true);
+  el.prog.max = ready.length; el.prog.value = 0;
+  const used = sizes.map(() => new Set());
+  let saved = 0, failed = 0, over = 0, bytes = 0, n = 0;
+  try {
+    for (const it of ready) {
+      showStatus('Working on ' + (++n) + ' of ' + ready.length + '…');
+      try {
+        const bmp = await decodeItem(it);
+        try {
+          for (let i = 0; i < sizes.length; i++) {
+            const blob = await encode(await renderFrom(it, bmp, sizes[i]), fmt, q, maxBytes, sizes[i].dpi);
+            await sink(folderOf(sizes[i]) + '/' + uniquePath(fileBase(it), ext, used[i]), blob);
+            bytes += blob.size;
+            if (maxBytes && blob.size > maxBytes) over++;
+          }
+        } finally { bmp.close(); }
+        saved++;
+      } catch (e) {
+        failed++;
+        console.error('Failed: ' + it.rel, e);
+      }
+      el.prog.value = n;
+    }
+    if (!saved) { showStatus('None of the photos could be saved.', true); return; }
+    const where = await finish();
+    const unchecked = ready.filter(i => flagsOf(i).length).length;
+    let msg = 'Saved ' + saved + (saved === 1 ? ' photo ' : ' photos ') + (sizes.length > 1 ? 'in ' + sizes.length + ' sizes ' : '') + where + ' (' + fmtBytes(bytes) + ' in total).';
+    if (failed) msg += ' ' + failed + ' failed.';
+    if (over) msg += ' ' + over + ' are still over ' + el.maxkb.value + ' KB at the lowest quality.';
+    if (unchecked) msg += ' ' + unchecked + ' were still marked "to check".';
+    showStatus(msg, failed > 0 || over > 0);
+  } catch (e) {
+    showStatus('Stopped: ' + e.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+el.saveFolder.addEventListener('click', () => run('folder'));
+el.saveZip.addEventListener('click', () => run('zip'));
+
+/* ---------- print pages ---------- */
+
+let printUrls = [];
+function node(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+async function makePrint() {
+  const ready = items.filter(i => i.status === 'ready');
+  if (!ready.length || busy || !computeOut()) return;
+  if (!await readyTools()) return;
+  const kind = el.printKind.value, ar = out.w / out.h;
+  const mm = clamp(+el.pw.value || 35, 15, 100);
+  const pxw = kind === 'sheet' ? Math.round(mm / 25.4 * 300) : kind === 'class' ? 260 : 330;
+  const size = { w: pxw, h: Math.round(pxw / ar) };
+  setBusy(true);
+  el.prog.max = ready.length; el.prog.value = 0;
+  closePrint();
+  const done = [];
+  try {
+    for (const it of ready) {
+      showStatus('Preparing page photos, ' + (done.length + 1) + ' of ' + ready.length + '…');
+      try {
+        const url = URL.createObjectURL(await toBlob(await renderCanvas(it, size), 'image/jpeg', 0.92));
+        printUrls.push(url);
+        done.push({ it, url });
+      } catch (e) { console.error('Failed: ' + it.rel, e); }
+      el.prog.value++;
+    }
+    const pages = el.pages, school = el.school.value.trim();
+    const img = (url, style) => { const i = node('img'); i.src = url; i.alt = ''; if (style) i.style.cssText = style; return i; };
+    if (kind === 'sheet') {
+      const copies = clamp(Math.round(+el.copies.value) || 1, 1, 60);
+      const style = 'width:' + mm + 'mm;height:' + (mm / ar).toFixed(2) + 'mm';
+      for (const d of done) {
+        const g = node('div', 'stu');
+        if (el.showNames.checked) g.appendChild(node('div', 'stuName', labelOf(d.it)));
+        for (let i = 0; i < copies; i++) g.appendChild(img(d.url, style));
+        pages.appendChild(g);
+      }
+    } else if (kind === 'class') {
+      const groups = new Map();
+      for (const d of done) { const k = classOf(d.it); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
+      for (const [cls, list] of [...groups].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))) {
+        const sec = node('section', 'cls');
+        sec.appendChild(node('h2', '', [school, cls].filter(Boolean).join(' · ') || 'Class photos'));
+        const grid = node('div', 'cgrid');
+        for (const d of list) {
+          const fig = node('figure');
+          fig.appendChild(img(d.url));
+          const cap = node('figcaption', '', labelOf(d.it));
+          if (d.it.meta && d.it.meta.id && d.it.meta.name) cap.appendChild(node('small', '', d.it.meta.id));
+          fig.appendChild(cap);
+          grid.appendChild(fig);
+        }
+        sec.appendChild(grid);
+        pages.appendChild(sec);
+      }
+    } else {
+      const colour = el.cardColor.value, foot = el.footer.value.trim();
+      for (const d of done) {
+        const m = d.it.meta || {};
+        const card = node('div', 'idcard');
+        const head = node('div', 'idhead');
+        head.style.background = colour;
+        if (crestUrl) head.appendChild(img(crestUrl));
+        head.appendChild(node('span', '', school || 'Student ID card'));
+        const body = node('div', 'idbody');
+        body.appendChild(img(d.url));
+        const text = node('div', 'idtext');
+        text.appendChild(node('b', '', labelOf(d.it)));
+        if (m.id && m.name) text.appendChild(node('span', '', 'ID: ' + m.id));
+        if (classOf(d.it)) text.appendChild(node('span', '', 'Class: ' + classOf(d.it)));
+        body.appendChild(text);
+        const f = node('div', 'idfoot', foot);
+        f.style.background = colour;
+        card.append(head, body, f);
+        pages.appendChild(card);
+      }
+    }
+    el.printHint.textContent = done.length + (done.length === 1 ? ' student' : ' students') + '. Print on A4 at 100% scale (not "fit to page") so the sizes come out right. Choose "Save as PDF" as the printer to get a PDF.';
+    el.printView.hidden = false;
+    showStatus('');
+  } catch (e) {
+    showStatus('Stopped: ' + e.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+function closePrint() {
+  el.printView.hidden = true;
+  el.pages.textContent = '';
+  for (const u of printUrls) URL.revokeObjectURL(u);
+  printUrls = [];
+}
+el.makePrint.addEventListener('click', makePrint);
+el.doPrint.addEventListener('click', () => window.print());
+el.closePrint.addEventListener('click', closePrint);
+el.pickCrest.addEventListener('click', () => el.crest.click());
+el.crest.addEventListener('change', () => {
+  const f = el.crest.files[0];
+  if (!f) return;
+  if (crestUrl) URL.revokeObjectURL(crestUrl);
+  crestUrl = URL.createObjectURL(f);
+  el.pickCrest.textContent = 'Crest chosen ✓';
+});
+
+if (!window.showDirectoryPicker) {
+  el.saveFolder.hidden = true;
+  el.saveZip.classList.add('primary');
+}
+loadSettings();
+refresh();
+updateCount();
+</script>
+</body>
+</html>
